@@ -71,8 +71,10 @@ def errores(a, b, eps=1e-15):
     if abs(a) > eps:
         rel_err = abs_err / abs(a)
     else:
-# cuando el original es 0, usamos el error absoluto
         rel_err = abs_err
+    if rel_err != rel_err:
+        rel_err = abs_err
+
     return abs_err, rel_err
 
 def compararaciones_numericas(tA, tB):
@@ -110,8 +112,8 @@ def formatear_txt_detalle(resultados):
         f"{'idx':>6}  "
         f"{'V1_error_rel':>{W}}  "
         f"{'V2_error_rel':>{W}}  "
-        f"{'HT_error_rel':>{W}}  "
-        f"{'HB_error_rel':>{W}}"
+        f"{'HB_error_rel':>{W}}  "
+        f"{'HT_error_rel':>{W}}"
     )
     lineas = [header, "-" * len(header)]
 
@@ -120,8 +122,8 @@ def formatear_txt_detalle(resultados):
             f"{r['idx']:6d}  "
             f"{r['V1_error_rel']:{W}.6e}  "
             f"{r['V2_error_rel']:{W}.6e}  "
-            f"{r['HT_error_rel']:{W}.6e}  "
-            f"{r['HB_error_rel']:{W}.6e}"
+            f"{r['HB_error_rel']:{W}.6e}  "
+            f"{r['HT_error_rel']:{W}.6e}"
         )
     return "\n".join(lineas) + "\n"
 
