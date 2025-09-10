@@ -5,7 +5,6 @@ _FLOAT = re.compile(r'^[+\-]?((\d+(\.\d*)?|\.\d+))([eE][+\-]?\d+)?$')
 
 # ------------------- ayudantes -------------------
 def _strip_comment(s: str) -> str:
-    # corta lo que viene después de '#' o '!'
     for mark in ('#', '!'):
         p = s.find(mark)
         if p != -1:
@@ -13,7 +12,6 @@ def _strip_comment(s: str) -> str:
     return s
 
 def _norm_token(tok: str) -> str:
-    # Fortran D±exp -> E±exp ; coma decimal simple -> punto
     t = tok.strip()
     t = re.sub(r'([0-9])([dD])([+\-]?\d+)$', r'\1E\3', t)
     if (',' in t) and ('.' not in t):
@@ -26,38 +24,23 @@ def float_number(line: str) -> bool:
         return False
     return all(_FLOAT.match(t) and ('.' in t or 'e' in t.lower()) for t in toks)
 
-# ------------------- CONFIG de comparación -------------------
-# Variable sobre la que se calcula el error (cambiá a 'HB', 'V1' o 'V2' si querés)
-ERROR_VAR = 'HT'
 
 # ------------------- lectura de datos -------------------
 def leer_registros(ruta_archivo):
-    """
-    Lee archivos con formato:
-      NO  V1  V2  HT  HB
-      ==  ==  ==  ==  ==
-      <filas...>
-
-    Devuelve un dict con 4 tuplas: {'V1':(...), 'V2':(...), 'HB':(...), 'HT':(...)}
-    """
     V1, V2, HT, HB = [], [], [], []
     with open(ruta_archivo, "r", encoding="utf-8", errors="ignore") as f:
         lineas = f.readlines()
 
-    # buscar encabezado de tabla
     i = 0
     while i < len(lineas) and not ("NO" in lineas[i] and "V1" in lineas[i] and "V2" in lineas[i] and "HT" in lineas[i] and "HB" in lineas[i]):
         i += 1
     if i == len(lineas):
-        # si no hay encabezado esperado, devolvemos tuplas vacías
         return {'V1': tuple(), 'V2': tuple(), 'HB': tuple(), 'HT': tuple()}
 
-    # saltar línea de "=="
     j = i + 1
     if j < len(lineas) and "=" in lineas[j]:
         j += 1
 
-    # recorrer filas
     while j < len(lineas):
         s = _strip_comment(lineas[j]).strip()
         j += 1
@@ -67,7 +50,6 @@ def leer_registros(ruta_archivo):
         if len(toks) < 5:
             continue
         try:
-            # NO = toks[0] (índice) -> se ignora
             v1 = float(_norm_token(toks[1]))
             v2 = float(_norm_token(toks[2]))
             ht = float(_norm_token(toks[3]))
@@ -82,29 +64,18 @@ def leer_registros(ruta_archivo):
 
     return {'V1': tuple(V1), 'V2': tuple(V2), 'HB': tuple(HB), 'HT': tuple(HT)}
 
+
 # ------------------- comparación numero a numero -------------------
 def errores(a, b, eps=1e-15):
-    """
-    Calcula error absoluto y relativo:
-      - err_abs = |a - b|
-      - err_rel = err_abs / |a| si |a| > 0
-                  err_abs si a == 0
-    """
     abs_err = abs(a - b)
     if abs(a) > eps:
         rel_err = abs_err / abs(a)
     else:
-        rel_err = abs_err  # cuando el original es 0, usamos el error absoluto
+# cuando el original es 0, usamos el error absoluto
+        rel_err = abs_err
     return abs_err, rel_err
 
 def compararaciones_numericas(tA, tB):
-    """
-    tA = ORIGINAL (dict con tuplas: 'V1','V2','HB','HT')
-    tB = NUEVO    (dict con tuplas: 'V1','V2','HB','HT')
-
-    Devuelve lista de dicts con:
-      idx | V1_error_relativo | V2_error_relativo | HT_error_relativo | HB_error_relativo
-    """
     V1a, V1b = tA.get('V1', ()), tB.get('V1', ())
     V2a, V2b = tA.get('V2', ()), tB.get('V2', ())
     HBa, HBb = tA.get('HB', ()), tB.get('HB', ())
@@ -113,52 +84,50 @@ def compararaciones_numericas(tA, tB):
     n = min(len(V1a), len(V1b), len(V2a), len(V2b), len(HBa), len(HBb), len(HTa), len(HTb))
     out = []
     for i in range(n):
-        # Regla: si original == 0 -> err_rel = err_abs
+# Regla: si original == 0 -> err_rel = err_abs
         _, v1_rel = errores(V1a[i], V1b[i])
         _, v2_rel = errores(V2a[i], V2b[i])
         _, ht_rel = errores(HTa[i], HTb[i])
         _, hb_rel = errores(HBa[i], HBb[i])
 
         out.append({
-            "idx": i,  # si querés base 1: i+1
-            "V1_error_relativo": v1_rel,
-            "V2_error_relativo": v2_rel,
-            "HT_error_relativo": ht_rel,
-            "HB_error_relativo": hb_rel,
+            "idx": i+1,
+            "V1_error_rel": v1_rel,
+            "V2_error_rel": v2_rel,
+            "HT_error_rel": ht_rel,
+            "HB_error_rel": hb_rel,
         })
     return out
 
+
 # ------------------- salida .txt de comparaciones -------------------
 def formatear_txt_detalle(resultados):
-    """
-    Tabla alineada con:
-    idx | V1_error_relativo | V2_error_relativo | HT_error_relativo | HB_error_relativo
-    """
     if not resultados:
         return "Sin datos\n"
-
-    W = 18  # ancho de cada columna numérica
+# ancho de cada columna numérica
+    W = 18
     header = (
         f"{'idx':>6}  "
-        f"{'V1_error_relativo':>{W}}  "
-        f"{'V2_error_relativo':>{W}}  "
-        f"{'HT_error_relativo':>{W}}  "
-        f"{'HB_error_relativo':>{W}}"
+        f"{'V1_error_rel':>{W}}  "
+        f"{'V2_error_rel':>{W}}  "
+        f"{'HT_error_rel':>{W}}  "
+        f"{'HB_error_rel':>{W}}"
     )
     lineas = [header, "-" * len(header)]
 
     for r in resultados:
         lineas.append(
             f"{r['idx']:6d}  "
-            f"{r['V1_error_relativo']:{W}.6e}  "
-            f"{r['V2_error_relativo']:{W}.6e}  "
-            f"{r['HT_error_relativo']:{W}.6e}  "
-            f"{r['HB_error_relativo']:{W}.6e}"
+            f"{r['V1_error_rel']:{W}.6e}  "
+            f"{r['V2_error_rel']:{W}.6e}  "
+            f"{r['HT_error_rel']:{W}.6e}  "
+            f"{r['HB_error_rel']:{W}.6e}"
         )
     return "\n".join(lineas) + "\n"
 
+
 # ------------------- nombrado / búsqueda de archivos -------------------
-# Acepta "chuS2.plt" y "chuS 2.plt"
+# Acepta formatos "chuS2" y "chuS 2"
 _NUM_CHUS = re.compile(r'chus\s*([0-9]+)\.plt$', re.IGNORECASE)
 
 def buscar_variantes(carpeta, i):
@@ -174,6 +143,7 @@ def nombre_salida(nombre_plt):
         return f"comparacion_chuS{m.group(1)}.txt"
     base = os.path.splitext(os.path.basename(nombre_plt))[0].replace(' ', '_')
     return f"comparacion_{base}.txt"
+
 
 # ------------------- comparaciones de carpetas -------------------
 def comparar_carpeta_a_vs_b(carpeta_a, carpeta_b, carpeta_salida, cantidad=80):
@@ -205,11 +175,15 @@ def comparar_carpeta_a_vs_b(carpeta_a, carpeta_b, carpeta_salida, cantidad=80):
               f"comparados={len(resultados)}  -> {ruta_out}")
     return generados
 
-if __name__ == "__main__":
-    ruta_a = r"D:\v06-run-pg" # carpeta original
-    ruta_b = r"D:\v07-run-2" # carpeta nueva
-    ruta_salidas = r"C:\Users\Santo\OneDrive\Desktop\salidas_comparaciones_A"
 
+# ------------------- programa principal -------------------
+if __name__ == "__main__":
+# carpeta original
+    ruta_a = r"D:\v06-run-pg"
+# carpeta nueva
+    ruta_b = r"D:\v07-run-2"
+# carpeta salidas comparaciones
+    ruta_salidas = r"C:\Users\Santo\OneDrive\Desktop\salidas_comparaciones_A"
     generados = comparar_carpeta_a_vs_b(ruta_a, ruta_b, ruta_salidas, cantidad=80)
     print("Comparación completa")
     print("Archivos generados:", len(generados))
