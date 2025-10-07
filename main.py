@@ -1,5 +1,6 @@
 import os
 import re
+import glob
 
 _FLOAT = re.compile(r'^[+\-]?((\d+(\.\d*)?|\.\d+))([eE][+\-]?\d+)?$')
 
@@ -175,6 +176,96 @@ def comparar_carpeta_a_vs_b(carpeta_a, carpeta_b, carpeta_salida, cantidad=80):
               f"comparados={len(resultados)}  -> {ruta_out}")
     return generados
 
+COLUMNAS = ("V1_error_rel", "V2_error_rel", "HB_error_rel", "HT_error_rel")
+PUNTOS_ESTRICTOS = {1, 2, 6, 45}
+
+def verificacion_lineas(linea: str):
+    s = linea.strip()
+    if not s or s.startswith('-'):
+        return False
+    if s.lower().startswith('idx'):
+        return False
+    toks = s.split()
+    if len(toks) != 5:
+        return False
+    return toks[0].isdigit()
+
+def lectura_datos_archivos(ruta_txt: str):
+    filas = []
+    with open(ruta_txt, 'r', encoding='utf-8', errors='ignore') as f:
+        for linea in f:
+            if not verificacion_lineas(linea):
+                continue
+            toks = linea.split()
+            idx = int(toks[0])
+            try:
+                v1 = float(toks[1]); v2 = float(toks[2]); hb = float(toks[3]); ht = float(toks[4])
+            except ValueError:
+                continue
+            filas.append({
+                'idx': idx,
+                'V1_error_rel': v1,
+                'V2_error_rel': v2,
+                'HB_error_rel': hb,
+                'HT_error_rel': ht,
+            })
+    return filas
+
+def validaciones_errores_puntos(idx: int, valor: float):
+    if idx in PUNTOS_ESTRICTOS:
+        thr = 1e-3
+        violado = not (valor < thr)
+        regla = "valor < 1e-3"
+    else:
+        thr = 1e-2
+        violado = valor > thr
+        regla = "valor ≤ 1e-2"
+    return violado, thr, regla
+
+def verificar_archivo(ruta_txt: str):
+    filas = lectura_datos_archivos(ruta_txt)
+    violaciones = []
+    for fila in filas:
+        idx = fila['idx']
+        for col in COLUMNAS:
+            valor = fila[col]
+            v, thr, regla = validaciones_errores_puntos(idx, valor)
+            if v:
+                violaciones.append({
+                    'idx': idx,
+                    'col': col,
+                    'valor': valor,
+                    'threshold': thr,
+                    'regla': regla
+                })
+    return {'archivo': ruta_txt, 'violaciones': violaciones}
+
+def analizar_resultados(carpeta_txt: str, patron="comparacion_*.txt", detener_si_hay_errores=False):
+    rutas = sorted(glob.glob(os.path.join(carpeta_txt, patron)))
+    reporte = []
+    archivos_con_error = 0
+
+    for ruta in rutas:
+        res = verificar_archivo(ruta)
+        reporte.append(res)
+        if res['violaciones']:
+            archivos_con_error += 1
+            print(f"[ERROR] {os.path.basename(ruta)} — {len(res['violaciones'])} violación(es)")
+            for v in res['violaciones']:
+                print(f"   - idx={v['idx']:>4}  col={v['col']:<13}  valor={v['valor']:.6e}  "
+                      f"umbral={v['threshold']:.1e}  (regla: {v['regla']})")
+            if detener_si_hay_errores:
+                raise ValueError(f"Se detectaron violaciones en {ruta}")
+        else:
+            print(f"[OK] {os.path.basename(ruta)} — sin violaciones")
+
+    ok_total = (archivos_con_error == 0)
+    print("\nResumen:")
+    print(f"  Archivos analizados: {len(rutas)}")
+    print(f"  Archivos con errores: {archivos_con_error}")
+    print(f"  Estado general: {'OK' if ok_total else 'CON ERRORES'}")
+
+    return ok_total, reporte
 
 # ------------------- programa principal -------------------
 if __name__ == "__main__":
@@ -184,8 +275,15 @@ if __name__ == "__main__":
     ruta_b = r"D:\v07-run-2"
 # carpeta salidas comparaciones
     ruta_salidas = r"C:\Users\Santo\OneDrive\Desktop\salidas_comparaciones_A"
+# generar comparaciones
     generados = comparar_carpeta_a_vs_b(ruta_a, ruta_b, ruta_salidas, cantidad=80)
     print("Comparación completa")
     print("Archivos generados:", len(generados))
     for g in generados:
         print(" -", g)
+# analizar errores en puntos criticos
+    ok, reporte = analizar_resultados(ruta_salidas)
+    if ok:
+        print("Todos los archivos cumplen las tolerancias a los errores.")
+    else:
+        print("Se detectaron errores fuera de tolerancia establecida.")
