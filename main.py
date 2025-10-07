@@ -68,12 +68,10 @@ def leer_registros(ruta_archivo):
 # ------------------- comparación numero a numero -------------------
 def errores(a, b):
     abs_err = abs(a - b)
-    if abs(a) >= 1:
-        rel_err = abs_err / abs(a)
+    if abs(a) < 1:
+        rel_err = abs_err
     else:
-        rel_err = abs_err
-    if rel_err != rel_err:
-        rel_err = abs_err
+        rel_err = abs_err / abs(a)
 
     return abs_err, rel_err
 
